@@ -1,6 +1,6 @@
 --[[
 ---- My To-do list ----
--- All core features should be done
+-[DONE] Add the ability to use this script without updated PROShine (Missing getCellType)
 
 ############################################################
 ### [ After completing the above I want to do these things ] ###
@@ -13,6 +13,8 @@
 -- ## General Items ##
 local enableDebugLogging = false 	-- This allows you to post in Forums with specific errors for faster fixes
 local disblePrivateMessaging = false -- Exactly what you think it does
+local relogMinTime = 1				--[IN HOURS] When should the bot be looking to start logging out?
+local relogMaxTime = 2				--[IN HOURS] What time should the bot never go over?
 
 -- ## Would you like to farm money? ##
 local farmMoney = false
@@ -53,7 +55,7 @@ local pokemonRod = "Good Rod"					-- What rod will you be using? Don't worry if 
 ----------------------------------------------------------------------------------
 -- ###### Do not edit below this line unless you know what you are doing ###### --
 ----------------------------------------------------------------------------------
-local version = "v1.1"
+local version = "v1.2"
 name = "All-in-One Script " .. version
 author = "iEpic"
 description = [[iEpics All-in-One Script]]
@@ -67,6 +69,7 @@ local startTime = os.time()
 local targetMaps = {}
 local zoneMaps = {}
 local checks = false
+local zonzBuild = false
 
 local function logMessage(message, type)
 	if type == 1 then
@@ -112,16 +115,20 @@ local function printAllTable(varTable)
 	return values
 end
 
-local function checkSyncAlive()
+local function checkCellTypeEnabled()
+	return getCellType(getPlayerX(), getPlayerY())
+end
+
+local function checkSyncAlive(inBattle)
 	if pokemonUseSync then
-		if getPokemonHealth(pokemonSyncIndex) <= 0 then
+		if getPokemonHealthPercent(pokemonSyncIndex) <= 20 and not inBattle then
 			logMessage("Sync Pokemon has fainted. Headed to PokeCenter.", 3)
 			Pathfinder.useNearestPokecenter()
 			return
 		end
 		if not getPokemonAbility(1) == "Synchronize" then
 			logMessage("The pokemon in your number 1 slot is not Synchronize. Please make it a Synchronize pokemon.", 4)
-			fatal("")
+			fatal("^^^^^^^^^^^^^")
 		end
 	end
 end
@@ -183,8 +190,12 @@ local function checkMoney()
 	end
 end
 
-local function checkPokemonLevel()
+local function checkPokemonLevel(inBattle)
 	if levelPokemon then
+		
+		if getPokemonHealthPercent(levelPokemonIndex) < 20 and not inBattle then
+			return Pathfinder.useNearestPokecenter()
+		end
 		if getPokemonLevel(levelPokemonIndex) < levelPokemonMinLevel then
 			return true
 		else
@@ -282,10 +293,14 @@ end
 local function checkBotTime()
 	endTime = os.time()
 	
+	relogMinTime = relogMinTime * 60
+	relogMaxTime = relogMaxTime * 60
+	
 	if os.difftime(endTime,startTime) <= 30 then
 		return
-	elseif (os.difftime(endTime,startTime)/60) >= math.random(60,120) then
-		relog(math.random(0,60), "The bot has been active for more than 2 hours. Re-logging to stay safe...")
+	elseif (os.difftime(endTime,startTime)/60) >= math.random(relogMinTime,relogMaxTime) then
+		startTime = os.time()
+		relog(math.random(0,60), "The bot has been active between " .. relogMinTime .. " and " .. relogMaxTime .. " hours. Re-logging to stay safe...")
 	end
 end
 
@@ -341,7 +356,11 @@ end
 ----------------------------- MY TESTING AREA -----------------------------
 
 
-
+if getCellType~= nil then
+	log("Test")
+else
+	log("hmm")
+end
 
 ----------------------------- MY TESTING AREA -----------------------------
 
@@ -349,6 +368,13 @@ function onStart()
 	logMessage("0-----------------------------------------------------0",3)
 	logMessage("Epics All-in-One started at: " .. os.date("%X"), 3)
 	logMessage("Is logging enabled: " .. checkEnabled(enableDebugLogging) , 3)
+	
+	if getCellType ~= nil then
+		logMessage("Your PROShine client is up-to-date with Zonz build.", 3)
+		zonzBuild = true
+	else
+		logMessage("You are not using the Zonz build for PROShine, be aware some functions may not work.", 4)
+	end
 	
 	if #pokemonToCatch > 0 then
 		logMessage("We will be catching the following pokemon: " .. printAllTable(pokemonToCatch), 3)
@@ -387,7 +413,8 @@ function onPathAction()
 	
 	-- Lets run our checks before heading out
 	checkBotTime()
-	checkSyncAlive()
+	checkPokemonLevel(false)
+	checkSyncAlive(false)
 	checkSleeperPPMove(false)
 	checkFalseSwipePP(false)
 	checkPokeballs()
@@ -401,7 +428,7 @@ function onPathAction()
 				if checkTeamSurf() then
 					moveToWater()
 					checks = false
-				elseif pokemonFishing then
+				elseif pokemonFishing and zonzBuild then
 					Pathfinder.moveToShoreline()
 					checks = false
 					if hasItem(pokemonRod) then
@@ -410,6 +437,11 @@ function onPathAction()
 						return
 					end
 				else
+					if not zonzBuild then
+						logMessage("You are un-able to fish for pokemon. [This function is not enabled without Zonz Merge Request of Proshine]", 4)
+						checks = true
+						return
+					end
 					if not checks then
 						checks = true
 						logMessage("You wanna catch a water pokemon but do not have surf and have fishing turned off.", 4)
@@ -436,10 +468,10 @@ function onBattleAction()
 			return
 		end
 	elseif farmMoney or levelPokemon  or evStatTrain then
-		if checkMoney() and not checkPokemonLevel() and not evStatTrain then
+		if checkMoney() and not checkPokemonLevel(true) and not evStatTrain then
 			attack()
 		end
-		if checkPokemonLevel() or evStatTrain then
+		if checkPokemonLevel(true) or evStatTrain then
 			if evStatPokemonIndex == levelPokemonIndex then
 				if getActivePokemonNumber() != levelPokemonIndex then
 					sendPokemon(levelPokemonIndex)
